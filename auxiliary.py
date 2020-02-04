@@ -16,7 +16,7 @@ def generate_mutations_hash_map_and_letter_codes():
     ln = len(letters)
     
     letter_codes[get_hash(0)] = 'Z'
-    for letter in letters:return
+    for letter in letters:
         letter_codes[get_hash(letter)] = letter
         
     for i in letters:
@@ -66,7 +66,7 @@ def encode_genotype(genotype, position_order):
             if genotype_splitted[pos] != 'Z':
                 genotype_enc.append(get_hash(genotype_splitted[pos]))
             else:
-                genotype_enc.фззутв(0)
+                genotype_enc.append(0)
     
     return genotype_enc
 
