@@ -11,6 +11,8 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--genotypes', help='the filename with genotypes')
     parser.add_argument('-d', '--folder', help='name of non-existing folder to store intermediate and result files, '
                                                '"hypercubes" by default', default='hypercubes')
+    parser.add_argument('-c', '--cores', help='the number of cores to be used in calculation, one by default',
+                        type=int, default=1)
     args = parser.parse_args()
 
     if args.folder.strip() == '':
@@ -47,7 +49,7 @@ if __name__ == '__main__':
         genotypes_vectors.append(aux.encode_genotype(a, pos_order))
     
     print('Generate hypercubes for dimension 1')
-    hp = aux.get_next_hypercubes_dim_one(genotypes_vectors, args.folder)
+    hp = aux.get_next_hypercubes_dim_one(genotypes_vectors, args.folder, args.cores)
     decoded = list(map(lambda x: aux.decode_hypercube(x, mut_hashmap, letter_codes, pos_order), hp))
     aux.write_to_file(1, decoded, args.folder)
     print('Done, hypercubes:{0}'.format(len(hp)))

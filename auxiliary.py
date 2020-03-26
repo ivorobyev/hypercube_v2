@@ -106,12 +106,12 @@ def init(vv, cc):
 def get_distance_matrix_multiplication(j):
      c[:,j] = np.sum(vectors[j]!=vectors, axis = 1)
 
-def get_next_hypercubes_dim_one(vectors, folder):
+def get_next_hypercubes_dim_one(vectors, folder, cores):
     vectors = np.array(vectors)
     l = len(vectors[0])
     c = np.memmap(folder+'/hypercubes_tmp', dtype='int32', mode='w+', shape = (len(vectors), len(vectors)))
 
-    p = Pool(processes=1, initializer=init, initargs=(vectors, c))
+    p = Pool(processes=cores, initializer=init, initargs=(vectors, c))
     p.map(get_distance_matrix_multiplication, range(len(vectors)))
 
     inds = np.where(c == 1)
