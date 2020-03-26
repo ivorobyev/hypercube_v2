@@ -1,15 +1,26 @@
 import numpy as np
+import os
+from multiprocessing import Pool
+
+def check_input(line, rownumber):
+    """Check input rows for valid format"""
+    amino_acids_list = ['G', 'A', 'V', 'L', 
+                        'I', 'M', 'F', 'W', 
+                        'P', 'S', 'T', 'C', 
+                        'Y', 'N', 'Q', 'D', 
+                        'E', 'K', 'R', 'H', 'Z']
+    frames = line.split(':')
+
+    for a in frames:
+        if a[:-1].isdigit() & (str(a[-1]).upper() in amino_acids_list):
+            continue
+        else:
+            raise NameError('ERROR: invalid input format at line: {0}'.format(rownumber+2))
 
 def get_hash(letter):
-    '''
-    Return hash of amino acid letter
-    '''
     return int(str(hash(letter)).replace('-','')[:5])
 
 def generate_mutations_hash_map_and_letter_codes():
-    '''
-    Generate dictionaries of amino acid letters codes and mutations
-    '''
     mut_hashmap = {}
     letter_codes = {}
     letters = 'ARNDCEQGHILKMFPSTWYV'
@@ -22,19 +33,17 @@ def generate_mutations_hash_map_and_letter_codes():
     for i in letters:
         for j in letters:
             mut = sorted((i,j))
-            mut_hashmap[abs(get_hash(i) -  get_hash(j))] = mut
+            mut_hashmap[np.bitwise_xor(get_hash(i),get_hash(j))] = mut
         
         z_mut = sorted((i,'Z'))
-        mut_hashmap[abs(get_hash(i) -  get_hash(0))] = z_mut
+        mut_hashmap[abs(get_hash(i) - get_hash(0))] = z_mut
             
     return mut_hashmap, letter_codes
         
 def get_positions(mut_list):
-    '''
-    Get all possible positions with mutations
-    '''
     positions = set()
     for a in mut_list:
+        a = '0Z' if a == '' else a
         genotype = a.split(':')
         genotype_pos = list(map(lambda x: int(x[:-1]), genotype))
         for a in genotype_pos:
@@ -42,9 +51,6 @@ def get_positions(mut_list):
     return positions
 
 def get_position_order_dict(positions):
-    '''
-    Return dictionary with positions and numerical order
-    '''
     pos_order = {}
     for index, key in enumerate(sorted(positions)):
         pos_order[index] = key
@@ -52,9 +58,6 @@ def get_position_order_dict(positions):
     return pos_order
         
 def encode_genotype(genotype, position_order):
-    '''
-    Convert genotype string to vector
-    '''
     genotype_s = genotype.split(':')
     genotype_splitted = {int(x[:-1]) : x[-1] for x in genotype_s}
     genotype_positions = list(map(lambda x: int(x[:-1]), genotype_s))
@@ -70,52 +73,21 @@ def encode_genotype(genotype, position_order):
     
     return genotype_enc
 
-def get_hypercubes(genotypes, dimensions = 0):
-    '''
-    Get all possible hypercubes for given genotypes
-    '''
-    hypercubes = []
-    ln = int(len(genotypes[0]) / 2) if dimensions != 1 else len(genotypes[0])
-    genotypes_count = len(genotypes)
-    distance_value = dimensions if dimensions == 1 else 2
-    
-    for i in range(genotypes_count):
-        diagonal = abs(np.array(genotypes[i][:ln]) - np.array(genotypes[i][-ln:]))
-        for j in range(i+1, genotypes_count):
-
-            prev_diagonal = abs(np.array(genotypes[j][:ln]) - np.array(genotypes[j][-ln:]))
-
-            if not np.array_equal(diagonal, prev_diagonal):
-                break
-                
-            dst = abs(np.array(genotypes[j]) - np.array(genotypes[i]))  
-            if (np.count_nonzero(dst) == distance_value) and np.array_equal(dst[:ln],dst[-ln:]):
-                hypercube = sorted([genotypes[j][:ln],
-                                    genotypes[j][-ln:],
-                                    genotypes[i][:ln],
-                                    genotypes[i][-ln:]])
-                hp = hypercube[-1] + hypercube[0]
-                hypercubes.append((tuple(abs(np.array(dst[:ln]) - np.array(prev_diagonal))),tuple(hp)))
-    return sorted(set(hypercubes))
-
 def decode_hypercube(hypercube, mut_hashmap, letter_codes, pos_order):
-    '''
-    Decode genotypes from vectors to string
-    '''
     decoded_array = []
-    ln = int(len(hypercube[1]) / 2)
-    for index, value in enumerate(hypercube[0]):
+    l = int(len(hypercube) / 2)
+    for index, value in enumerate(np.bitwise_xor(hypercube[:l], hypercube[l:])):
         states = sorted([mut_hashmap[value][0], mut_hashmap[value][1]])
         if value != 0:
             decoded_array.append('{0}{1}{2}'.format(states[0], pos_order[index], states[1]))
     
     first_genotype = []
-    for index, a in enumerate(hypercube[1][:ln]):
+    for index, a in enumerate(hypercube[:l]):
         if a != 0:
             first_genotype.append(str(pos_order[index])+letter_codes[a])
             
     last_genotype = []
-    for index, a in enumerate(hypercube[1][-ln:]):
+    for index, a in enumerate(hypercube[l:]):
         if a != 0:
             last_genotype.append(str(pos_order[index])+letter_codes[a])
     
@@ -125,4 +97,78 @@ def decode_hypercube(hypercube, mut_hashmap, letter_codes, pos_order):
     last_genotype = ':'.join(last_genotype) if len(last_genotype) > 0 else '0Z'
     
     return ' '.join((diagonal, first_genotype, last_genotype))
+
+def init(vv, cc):
+    global vectors, c
+    vectors = vv
+    c = cc
+
+def get_distance_matrix_multiplication(j):
+     c[:,j] = np.sum(vectors[j]!=vectors, axis = 1)
+
+def get_next_hypercubes_dim_one(vectors, folder):
+    vectors = np.array(vectors)
+    l = len(vectors[0])
+    c = np.memmap(folder+'/hypercubes_tmp', dtype='int32', mode='w+', shape = (len(vectors), len(vectors)))
+
+    p = Pool(processes=1, initializer=init, initargs=(vectors, c))
+    p.map(get_distance_matrix_multiplication, range(len(vectors)))
+
+    inds = np.where(c == 1)
+    del c
+    os.remove(folder+'/hypercubes_tmp')
+
+    unar_dist = {tuple(sorted([inds[0][i], inds[1][i]])) for i in range(len(inds[0]))}
+    next_hp = []
+    for a in unar_dist:
+        next_hp.append(tuple(np.concatenate((vectors[a[0]], vectors[a[1]]))))
+        
+    return np.array(sorted(next_hp, key = lambda s: tuple(np.bitwise_xor(s[:l],s[l:]))))
+
+def get_next_hypercubes(vectors):
+    vectors = np.array(vectors)
+    l = int(len(vectors[0])/2)
     
+    next_hp = set()
+    inds = []
+    for i in range(len(vectors) - 1):
+        inds.append(i)
+        
+        if tuple(np.bitwise_xor(vectors[i][:l], vectors[i][l:])) == tuple(np.bitwise_xor(vectors[i+1][:l], vectors[i+1][l:])):
+            continue
+            
+        if len(inds) != 0:
+            diag_vectors = []
+            for i in inds:
+                diag_vectors.append(vectors[i])
+            
+            diag_vectors = np.array(diag_vectors)
+                
+            s1 = np.sum(diag_vectors[:,l:][...,np.newaxis]!=diag_vectors[:,l:].T[np.newaxis,...], axis = 1)
+            s1 = np.where(s1!=1, 0, s1)
+
+            s2 = np.sum(diag_vectors[:,:l][...,np.newaxis]!=diag_vectors[:,:l].T[np.newaxis,...], axis = 1)
+            s2 = np.where(s2!=1, 0, s2)
+
+            c = s1 + s2
+            indx = np.where(c == 2)
+            del s1, s2, c
+
+            unar_dist = {tuple(sorted([indx[0][i], indx[1][i]])) for i in range(len(indx[0]))}
+            
+            for a in set(unar_dist):
+                hypercube = sorted([tuple(diag_vectors[a[0]][:l]), 
+                                    tuple(diag_vectors[a[0]][l:]), 
+                                    tuple(diag_vectors[a[1]][:l]), 
+                                    tuple(diag_vectors[a[1]][l:])])
+
+                short_hp = hypercube[-1] + hypercube[0]
+                next_hp.add(tuple(short_hp))
+            inds = []
+    return np.array(sorted(next_hp, key = lambda s: tuple(np.bitwise_xor(s[:l],s[l:]))))
+
+def write_to_file(dims, hypercubes, folder):
+    f = open(folder+"/hypercubes"+str(dims)+".txt", "w")
+    for hp in hypercubes:
+        f.write(str(hp) +'\n')
+    f.close()
